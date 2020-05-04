@@ -28,7 +28,7 @@ class EncryptionService {
 		this.chunkSize_ = 5000;
 		this.loadedMasterKeys_ = {};
 		this.activeMasterKeyId_ = null;
-		this.defaultEncryptionMethod_ = EncryptionService.METHOD_SJCL_1A;
+		this.defaultEncryptionMethod_ = EncryptionService.METHOD_SJCL_1B;
 		this.defaultMasterKeyEncryptionMethod_ = EncryptionService.METHOD_SJCL_4;
 		this.logger_ = new Logger();
 
@@ -337,6 +337,26 @@ class EncryptionService {
 			}
 		}
 
+		if (method === EncryptionService.METHOD_SJCL_1B) {	// Same config as 1A, except with a longer key
+			try {
+				// We need to escape the data because SJCL uses encodeURIComponent to process the data and it only
+				// accepts UTF-8 data, or else it throws an error. And the notes might occasionally contain
+				// invalid UTF-8 data. Fixes https://github.com/laurent22/joplin/issues/2591
+				return sjcl.json.encrypt(key, escape(plainText), {
+					v: 1, // version
+					iter: 101, // Since the master key already uses key derivations and is secure, additional iteration here aren't necessary, which will make decryption faster. SJCL enforces an iter strictly greater than 100
+					ks: 256, // Key size
+					ts: 64, // ???
+					mode: 'ccm', //  The cipher mode is a standard for how to use AES and other algorithms to encrypt and authenticate your message. OCB2 mode is slightly faster and has more features, but CCM mode has wider support because it is not patented.
+					// "adata":"", // Associated Data - not needed?
+					cipher: 'aes',
+				});
+			} catch (error) {
+				throw this.wrapSjclError(error);
+			}
+		}
+
+
 		// 2020-01-23: Deprectated - see above.
 		// Was used to encrypt master keys
 		if (method === EncryptionService.METHOD_SJCL_2) {
@@ -400,7 +420,7 @@ class EncryptionService {
 		try {
 			const output = sjcl.json.decrypt(key, cipherText);
 
-			if (method === EncryptionService.METHOD_SJCL_1A) {
+			if (method === EncryptionService.METHOD_SJCL_1A || method === EncryptionService.METHOD_SJCL_1B) {
 				return unescape(output);
 			} else {
 				return output;
@@ -659,7 +679,7 @@ class EncryptionService {
 	}
 
 	isValidEncryptionMethod(method) {
-		return [EncryptionService.METHOD_SJCL, EncryptionService.METHOD_SJCL_1A, EncryptionService.METHOD_SJCL_2, EncryptionService.METHOD_SJCL_3, EncryptionService.METHOD_SJCL_4].indexOf(method) >= 0;
+		return [EncryptionService.METHOD_SJCL, EncryptionService.METHOD_SJCL_1A, EncryptionService.METHOD_SJCL_1B, EncryptionService.METHOD_SJCL_2, EncryptionService.METHOD_SJCL_3, EncryptionService.METHOD_SJCL_4].indexOf(method) >= 0;
 	}
 
 	async itemIsEncrypted(item) {
@@ -682,6 +702,7 @@ EncryptionService.METHOD_SJCL_2 = 2;
 EncryptionService.METHOD_SJCL_3 = 3;
 EncryptionService.METHOD_SJCL_4 = 4;
 EncryptionService.METHOD_SJCL_1A = 5;
+EncryptionService.METHOD_SJCL_1B = 50;
 
 EncryptionService.fsDriver_ = null;
 
